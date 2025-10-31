@@ -11,10 +11,11 @@ model = CNN(num_class=40).to(device)
 criterion = nn.BCELoss()  # Binary Cross Entropy para multi-label
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-num_epochs = 10
-best_val_loss = float('inf')  # Para guardar o melhor modelo
+num_epochs = 100  # aumento do limite máximo
+patience = 10
+best_val_loss = float('inf')
+epochs_no_improve = 0
 
-# Treino
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
@@ -29,7 +30,6 @@ for epoch in range(num_epochs):
 
     epoch_loss = running_loss / len(train_loader.dataset)
 
-    # Validação
     model.eval()
     val_loss = 0.0
     with torch.no_grad():
@@ -43,8 +43,13 @@ for epoch in range(num_epochs):
 
     print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, Val Loss: {val_epoch_loss:.4f}')
 
-    # guardar o melhor modelo
     if val_epoch_loss < best_val_loss:
         best_val_loss = val_epoch_loss
         torch.save(model.state_dict(), 'best_model_celeba.pth')
-        print(f'Melhor modelo salvo com loss de validação: {best_val_loss:.4f}')
+        print(f'Melhor modelo salvo com perda de validação: {best_val_loss:.4f}')
+        epochs_no_improve = 0  # reset paciência
+    else:
+        epochs_no_improve += 1
+        if epochs_no_improve >= patience:
+            print(f'Early stopping ativado após {epoch+1} épocas sem melhoria.')
+            break
