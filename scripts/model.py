@@ -4,10 +4,11 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 
+# Define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
-
+# Define the CNN model
 class CNN(nn.Module):
     def __init__(self, num_class=40):
         super(CNN, self).__init__()
