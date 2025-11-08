@@ -2,21 +2,21 @@ import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 
-# Definir dispositivo
+# Define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
-# Transformações: Resize para 128x128, converter para tensor e normalizar
+# Resize to 128x128, convert to tensor, and normalize
 transform = transforms.Compose([
     transforms.Resize((128, 128)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 ])
 
-# Carregar dataset CelebA completo
+# Load complete CelebA dataset
 celeba_dataset = datasets.CelebA(root='./data', split='all', transform=transform, download=True)
 
-# Divisão treino/validação/teste: 70%, 15%, 15%
+# Dataset split sizes train/val/test: 70%, 15%, 15%
 total_size = len(celeba_dataset)
 train_size = int(0.7 * total_size)
 val_size = int(0.15 * total_size)
@@ -30,7 +30,7 @@ train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
 test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
-# Confirmação de tamanhos
-print(f'Tamanho treino: {len(train_data)}')
-print(f'Tamanho validação: {len(val_data)}')
-print(f'Tamanho teste: {len(test_data)}')
+# Confirm sizes
+print(f'Train size: {len(train_data)}')
+print(f'Validation size: {len(val_data)}')
+print(f'Test size: {len(test_data)}')
