@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
+import torch.nn as nn
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
+
 
 class CNN(nn.Module):
     def __init__(self, num_class=40):
@@ -11,10 +17,10 @@ class CNN(nn.Module):
         self.fc1 = nn.Linear(64 * 32 * 32, 128)
         self.fc2 = nn.Linear(128, num_class)
 
-    def forward(self, x):                      
-        x = self.pool(F.relu(self.conv1(x)))  # passa pela conv1 + relu + pooling
-        x = self.pool(F.relu(self.conv2(x)))  # passa pela conv2 + relu + pooling
-        x = x.view(-1, 64 * 32 * 32)          # achata para vetor (flatten)
-        x = F.relu(self.fc1(x))               # primeira camada totalmente conectada + relu
-        x = torch.sigmoid(self.fc2(x))        # camada final + sigmoid para probabilidades
-        return x                              # output final
+    def forward(self, x):                
+        x = self.pool(F.relu(self.conv1(x)))  
+        x = self.pool(F.relu(self.conv2(x)))  
+        x = x.view(-1, 64 * 32 * 32)          
+        x = F.relu(self.fc1(x))                
+        x = torch.sigmoid(self.fc2(x))        
+        return x                    
