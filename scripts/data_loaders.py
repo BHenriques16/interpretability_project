@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, random_split
 
 # Definir dispositivo
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
 
 # Transformações: Resize para 128x128, converter para tensor e normalizar
 transform = transforms.Compose([
