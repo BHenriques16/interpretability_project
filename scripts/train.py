@@ -1,22 +1,30 @@
 import torch
 import torch.nn as nn
+import torch
+import torch.nn as nn
 import torch.optim as optim
-from model import CNN
+import time
 from data_loaders import train_loader, val_loader
+from scripts.model import CNN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
 
 model = CNN(num_class=40).to(device)
 
 criterion = nn.BCELoss()  # Binary Cross Entropy para multi-label
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-num_epochs = 100  # aumento do limite máximo
-patience = 10
+num_epochs = 50  
+patience = 5
 best_val_loss = float('inf')
 epochs_no_improve = 0
 
+start_training = time.time()
+
 for epoch in range(num_epochs):
+    start_epoch = time.time()
+    
     model.train()
     running_loss = 0.0
     for inputs, labels in train_loader:
@@ -41,15 +49,21 @@ for epoch in range(num_epochs):
 
     val_epoch_loss = val_loss / len(val_loader.dataset)
 
-    print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, Val Loss: {val_epoch_loss:.4f}')
+    end_epoch = time.time()
+    epoch_time = end_epoch - start_epoch
+    print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, Val Loss: {val_epoch_loss:.4f}, Tempo de época: {epoch_time:.2f}s')
 
     if val_epoch_loss < best_val_loss:
         best_val_loss = val_epoch_loss
         torch.save(model.state_dict(), 'best_model_celeba.pth')
-        print(f'Melhor modelo salvo com perda de validação: {best_val_loss:.4f}')
+        print(f'Melhor modelo guardado com loss de validação: {best_val_loss:.4f}')
         epochs_no_improve = 0  # reset paciência
     else:
         epochs_no_improve += 1
         if epochs_no_improve >= patience:
             print(f'Early stopping ativado após {epoch+1} épocas sem melhoria.')
             break
+
+end_training = time.time()
+total_training_time = end_training - start_training
+print(f'Tempo total de treino: {total_training_time:.2f}s')
