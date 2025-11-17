@@ -6,7 +6,6 @@ from torchvision import datasets
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import time
-from model import CNN
 from data_transform import create_data_transforms
 from test_eval import test_eval
 from model import PretrainedModel
