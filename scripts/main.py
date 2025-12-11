@@ -3,232 +3,260 @@ import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 from torchvision import datasets
-from torch.utils.data import DataLoader, random_split
 from methods import *
 from metrics import *
 from model import PretrainedModel
 from data_transform import create_data_transforms
 import cv2
+from PIL import Image
+import os
+import glob
 
+# --- CONFIGURAÇÕES ---
+IMG_SIZE = 128
+# Garante que estas pastas existem dentro do teu projeto
+BASE_DIR = "scripts/validation_data" 
+IMG_DIR = os.path.join(BASE_DIR, "CelebA-HQ-img")
+MASK_DIR = os.path.join(BASE_DIR, "CelebAMask-HQ-mask-anno")
 
-def load_model(model_path='models/best_model.pth', num_classes=40, pretrained=False):
-    model = PretrainedModel(num_classes=num_classes, pretrained=pretrained)
-    model.load_state_dict(torch.load(model_path))
+# --- MAPEAMENTO: Classe CelebA -> Ficheiros CelebAMask-HQ ---
+MASK_MAPPING = {
+    # BOCA / BATOM / SORRISO
+    21: ['l_lip', 'u_lip', 'mouth'], # Mouth_Slightly_Open
+    31: ['l_lip', 'u_lip', 'mouth'], # Smiling
+    36: ['l_lip', 'u_lip'],          # Wearing_Lipstick
+    
+    # OLHOS / ÓCULOS
+    1:  ['l_brow', 'r_brow'],        # Arched_Eyebrows
+    15: ['eye_g'],                   # Eyeglasses
+    23: ['l_eye', 'r_eye'],          # Narrow_Eyes
+    
+    # CABELO
+    8:  ['hair'], # Black_Hair
+    9:  ['hair'], # Blond_Hair
+    11: ['hair'], # Brown_Hair
+    17: ['hair'], # Gray_Hair
+    33: ['hair'], # Wavy_Hair
+    
+    # NARIZ
+    7:  ['nose'], # Big_Nose
+    27: ['nose'], # Pointy_Nose
+    
+    # PELE / GERAL (Fallback)
+    'default': ['skin', 'nose', 'l_eye', 'r_eye', 'l_lip', 'u_lip', 'l_brow', 'r_brow'] 
+}
+
+# --- FUNÇÕES AUXILIARES ---
+
+def load_model(model_path='models/best_model.pth', num_classes=40):
+    model = PretrainedModel(num_classes=num_classes, pretrained=False)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
     model.eval()
-    return model
+    return model, device
 
 def remove_inplace_relu(model):
     for name, module in model.named_modules():
-        if isinstance(module, nn.ReLU):
-            module.inplace = False
+        if isinstance(module, nn.ReLU): module.inplace = False
 
-def load_data(test_loader):
-    data_iter = iter(test_loader)
-    image, ground_truth = next(data_iter)
-    image = image[0].unsqueeze(0)
-    ground_truth = ground_truth[0].unsqueeze(0)
-    return image, ground_truth
+def get_mask_filepath(base_mask_dir, image_id_int, part_name):
+    """Calcula o caminho do ficheiro na estrutura de pastas 0, 1, 2..."""
+    folder_num = image_id_int // 2000
+    filename_str = f"{image_id_int:05d}_{part_name}.png"
+    return os.path.join(base_mask_dir, str(folder_num), filename_str)
 
-def normalize_explanation(explanation):
-    exp_min = np.min(explanation)
-    exp_max = np.max(explanation)
-    if exp_max - exp_min == 0:
-        return np.zeros_like(explanation)
-    return (explanation - exp_min) / (exp_max - exp_min)
-
-
-def visualize_explanations(image, ground_truth, methods_dict):    
-    # Converts image for visualization
-    image_vis = image.squeeze(0).permute(1, 2, 0).cpu().numpy()
-    image_vis = (image_vis - image_vis.min()) / (image_vis.max() - image_vis.min() + 1e-8)
+def construct_mask_from_parts(base_mask_dir, image_id_int, class_idx, image_shape=(128, 128)):
+    parts_needed = MASK_MAPPING.get(class_idx, MASK_MAPPING['default'])
+    final_mask = np.zeros(image_shape)
+    found_any = False
     
-    # Create the figure wihth subplots
+    for part in parts_needed:
+        mask_path = get_mask_filepath(base_mask_dir, image_id_int, part)
+        
+        if os.path.exists(mask_path):
+            try:
+                part_img = Image.open(mask_path).convert('L')
+                part_img = part_img.resize(image_shape)
+                part_np = np.array(part_img)
+                final_mask = np.maximum(final_mask, part_np)
+                found_any = True
+            except Exception as e:
+                print(f"Erro ao ler {mask_path}: {e}")
+    
+    if not found_any:
+        return np.zeros(image_shape)
+        
+    return (final_mask > 0).astype(float)
+
+# --- FUNÇÕES DE VISUALIZAÇÃO ---
+
+def visualize_result(image_pil, mask_binary, methods_dict, filename, class_name):
+    """Gera visualização individual para cada imagem processada"""
+    image_vis = np.array(image_pil.resize((128, 128))) / 255.0
     num_methods = len(methods_dict)
-    fig, axes = plt.subplots(2, (num_methods + 1) // 2 + 1, figsize=(20, 10))
-    fig.suptitle('Comparison of Interpretability Methods', fontsize=16, fontweight='bold')
-    
-    axes = axes.flatten()
+    fig, axes = plt.subplots(1, num_methods + 2, figsize=(3 * (num_methods + 2), 3))
     
     axes[0].imshow(image_vis)
-    axes[0].set_title('Imagem Original', fontweight='bold', fontsize=12)
+    axes[0].set_title(f"ID: {filename}\nPred: {class_name}")
     axes[0].axis('off')
     
-    # Ground Truth as heatmap
-    gt_vis = ground_truth.squeeze(0).cpu().numpy()
-    gt_heatmap = np.zeros((len(gt_vis), 128))
-    gt_heatmap[:, :] = gt_vis.reshape(-1, 1)
-    im = axes[1].imshow(gt_heatmap, cmap='RdYlGn', aspect='auto')
-    axes[1].set_title('Ground Truth ', fontweight='bold', fontsize=12)
-    axes[1].set_ylabel('Atributte Index', fontsize=10)
-    plt.colorbar(im, ax=axes[1], label='Present')
+    axes[1].imshow(mask_binary, cmap='gray')
+    axes[1].set_title("CelebAMask GT")
+    axes[1].axis('off')
     
-    # Visualize each method
-    for idx, (name, explanation) in enumerate(methods_dict.items(), start=2):
-        if idx >= len(axes):
-            break
+    for idx, (name, exp) in enumerate(methods_dict.items()):
+        ax = axes[idx + 2]
+        if isinstance(exp, torch.Tensor): exp = exp.cpu().detach().numpy()
+        if exp.ndim == 4: exp = exp[0]
+        if exp.ndim == 3: exp = np.mean(np.abs(exp), axis=0)
         
-        try:
-            # Converte to numpy if is a tensor
-            if isinstance(explanation, torch.Tensor):
-                explanation = explanation.cpu().numpy()
-            
-            if explanation.ndim >= 3:
-                exp_norm = np.abs(explanation).squeeze().mean(axis=0)
-            elif explanation.ndim == 2:
-                exp_norm = np.abs(explanation)
-            else:
-                exp_norm = np.abs(explanation)
-            
-            if exp_norm.ndim == 1:
-                size = int(np.sqrt(len(exp_norm)))
-                if size * size != len(exp_norm):
-                    target_size = (size + 1) ** 2
-                    exp_padded = np.zeros(target_size)
-                    exp_padded[:len(exp_norm)] = exp_norm.flatten()
-                    exp_norm = exp_padded.reshape(size + 1, size + 1)
-                else:
-                    exp_norm = exp_norm.reshape(size, size)
-            
-            # Normalize [0,1]
-            exp_min = np.min(exp_norm)
-            exp_max = np.max(exp_norm)
-            if exp_max - exp_min > 1e-8:
-                exp_norm = (exp_norm - exp_min) / (exp_max - exp_min)
-            else:
-                exp_norm = np.zeros_like(exp_norm, dtype=float)
-            
-            exp_norm = cv2.resize(exp_norm.astype(np.float32), (128, 128), interpolation=cv2.INTER_LINEAR)
-            
-            axes[idx].imshow(image_vis)
-            im = axes[idx].imshow(exp_norm, cmap='jet', alpha=0.6)
-            axes[idx].set_title(name, fontweight='bold', fontsize=12)
-            axes[idx].axis('off')
-            plt.colorbar(im, ax=axes[idx])
-            
-        except Exception as e:
-            print(f"Error visualizing {name}: {str(e)}")
-            axes[idx].text(0.5, 0.5, f'Error: {str(e)}', ha='center', va='center')
-            axes[idx].axis('off')
-    
-    # Remove eixos vazios
-    for idx in range(len(methods_dict) + 2, len(axes)):
-        fig.delaxes(axes[idx])
-    
+        v_min, v_max = np.percentile(exp, [1, 99])
+        exp_norm = np.clip((exp - v_min) / (v_max - v_min + 1e-8), 0, 1)
+        exp_norm = cv2.resize(exp_norm.astype(np.float32), (128, 128))
+        
+        ax.imshow(image_vis)
+        ax.imshow(exp_norm, cmap='jet', alpha=0.5)
+        ax.set_title(name)
+        ax.axis('off')
+        
     plt.tight_layout()
-    plt.savefig('images/interpretability_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    # Cria a pasta images se não existir
+    os.makedirs('images', exist_ok=True)
+    plt.savefig(f'images/result_{filename}.png', dpi=100)
+    plt.close()
 
 def plot_metrics_comparison(metrics_results):
+    """Gera o gráfico de barras com as médias finais"""
+    if not metrics_results: return
+
     names = [item[0] for item in metrics_results]
     completeness_scores = [item[1] for item in metrics_results]
     attribution_scores = [item[2] for item in metrics_results]
     
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle('Comparison of Interpretability Metrics', fontsize=14, fontweight='bold')
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
-    # Gráfico de Completeness
+    # Gráfico 1: Completeness
     bars1 = ax1.bar(names, completeness_scores, color='steelblue', alpha=0.7)
-    ax1.set_ylabel('Completeness Score', fontsize=12, fontweight='bold')
-    ax1.set_title('Completeness', fontsize=12, fontweight='bold')
-    ax1.set_ylim(0, 1)
+    ax1.set_ylabel('Score')
+    ax1.set_title('Average Completeness', fontsize=12, fontweight='bold')
+    ax1.set_ylim(0, max(max(completeness_scores)*1.2, 0.1)) 
     ax1.tick_params(axis='x', rotation=45)
     ax1.grid(axis='y', alpha=0.3)
     
-    # Adiciona valores nas barras
     for bar in bars1:
         height = bar.get_height()
         ax1.text(bar.get_x() + bar.get_width()/2., height,
                 f'{height:.4f}', ha='center', va='bottom', fontsize=10)
     
-    # Gráfico de Attribution Localization
+    # Gráfico 2: Attribution Localization
     bars2 = ax2.bar(names, attribution_scores, color='coral', alpha=0.7)
-    ax2.set_ylabel('Attribution Localization Score', fontsize=12, fontweight='bold')
-    ax2.set_title('Attribution Localization', fontsize=12, fontweight='bold')
-    ax2.set_ylim(0, 1)
+    ax2.set_ylabel('IoU Score')
+    ax2.set_title('Average Attribution Localization (IoU)', fontsize=12, fontweight='bold')
+    ax2.set_ylim(0, 1.0)
     ax2.tick_params(axis='x', rotation=45)
     ax2.grid(axis='y', alpha=0.3)
     
-    # Adiciona valores nas barras
     for bar in bars2:
         height = bar.get_height()
         ax2.text(bar.get_x() + bar.get_width()/2., height,
                 f'{height:.4f}', ha='center', va='bottom', fontsize=10)
     
     plt.tight_layout()
-    plt.savefig('images/metrics_comparison.png', dpi=150, bbox_inches='tight')
+    plt.savefig('images/final_metrics_comparison.png', dpi=150, bbox_inches='tight')
     plt.show()
 
+# --- MAIN ---
+
 def main():
-    img_size = 128
-    batch_size = 16
-    num_classes = 40
-    model_path = "models/best_model.pth"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-
-    # Criação do DataLoader
-    train_transforms, val_transforms = create_data_transforms(img_size)
-    celeba_dataset = datasets.CelebA(root="./data", split="all", target_type="attr", 
-                                    download=False, transform=val_transforms)
-    total_size = len(celeba_dataset)
-    train_size = int(0.7 * total_size)
-    val_size = int(0.15 * total_size)
-    test_size = total_size - train_size - val_size
-    _, _, test_data = random_split(celeba_dataset, [train_size, val_size, test_size])
-    test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=2)
-
-    # Carrega o modelo
-    model = load_model(model_path, num_classes=num_classes, pretrained=False)
-    model.to(device)
+    
+    _, val_transforms = create_data_transforms(IMG_SIZE)
+    model, device = load_model()
     remove_inplace_relu(model)
+    
+    # Procura imagens na pasta CelebA-HQ-img
+    img_files = sorted(glob.glob(os.path.join(IMG_DIR, "*.jpg")))
+    
+    # --- LIMITADOR PARA TESTE ---
+    # Processa apenas as primeiras 5 imagens para ser rápido
+    img_files = img_files[:5] 
+    
+    if not img_files:
+        print(f"ERRO: Nenhuma imagem encontrada em {IMG_DIR}")
+        return
 
-    # Carrega os dados
-    image, ground_truth = load_data(test_loader)
-    image_device = image.to(device)
+    global_results = {k: {'comp': [], 'loc': []} for k in ['LIME', 'Integrated Gradients', 'Grad-CAM', 'Occlusion', 'Saliency']}
 
-    print("\nApplying interpretability methods...")
+    print(f"Starting Evaluation on {len(img_files)} images...")
+
+    for img_path in img_files:
+        filename = os.path.basename(img_path)
+        # Extrai o ID numérico (ex: "0.jpg" -> 0)
+        try:
+            image_id_int = int(filename.split('.')[0])
+        except ValueError:
+            continue
+        
+        print(f"\nProcessing ID: {image_id_int}")
+        
+        # 1. Carregar Imagem
+        pil_img = Image.open(img_path).convert('RGB')
+        input_tensor = val_transforms(pil_img).unsqueeze(0).to(device)
+        
+        # 2. Prever Classe
+        with torch.no_grad():
+            output = model(input_tensor)
+            probs = torch.sigmoid(output)
+            target_class = torch.argmax(probs, dim=1).item()
+        
+        print(f"  -> Predicted Class: {target_class}")
+            
+        # 3. CONSTRUIR MÁSCARA DINÂMICA
+        gt_mask = construct_mask_from_parts(MASK_DIR, image_id_int, target_class)
+        
+        if np.sum(gt_mask) == 0:
+            print("  -> Skipping metrics (Empty Mask / Parts not found)")
+            continue
+
+        # 4. Métodos e Métricas
+        methods = {
+            'LIME': lime_method(model, input_tensor),
+            'Integrated Gradients': integrated_gradients_method(model, input_tensor, target_class),
+            'Grad-CAM': grad_cam_method(model, input_tensor, target_class),
+            'Occlusion': occlusion_method(model, input_tensor, target_class),
+            'Saliency': saliency_method(model, input_tensor, target_class)
+        }
+        
+        img_np_intensity = np.mean(input_tensor.cpu().numpy()[0], axis=0)
+        
+        for name, exp in methods.items():
+            if isinstance(exp, torch.Tensor): exp = exp.cpu().detach().numpy()
+            comp = completeness(exp, img_np_intensity, threshold=0.2)
+            loc = attribution_localization(exp, gt_mask, threshold=0.2)
+            global_results[name]['comp'].append(comp)
+            global_results[name]['loc'].append(loc)
+            
+        visualize_result(pil_img, gt_mask, methods, str(image_id_int), f"Class {target_class}")
+
+    # Resultados Finais
+    print("\n" + "="*60)
+    print("FINAL RESULTS (Average over Validation Subset)")
+    print(f"{'METHOD':<25} | {'AVG COMPLETENESS':<20} | {'AVG ATTR LOC (IoU)':<20}")
+    print("-" * 70)
     
-    # Aplica os métodos de interpretabilidade
-    methods_explanations = {}
+    final_metrics = []
+    for name, m in global_results.items():
+        if m['comp']:
+            avg_c, avg_l = np.mean(m['comp']), np.mean(m['loc'])
+            print(f"{name:<25} | {avg_c:.4f}               | {avg_l:.4f}")
+            final_metrics.append((name, avg_c, avg_l))
     
-    print("LIME...")
-    lime_explanation = lime_method(model, image)
-    methods_explanations['LIME'] = lime_explanation
+    if final_metrics:
+        plot_metrics_comparison(final_metrics)
     
-    print("Integrated Gradients...")
-    integrated_gradients_explanation = integrated_gradients_method(model, image_device, 0)
-    methods_explanations['Integrated Gradients'] = integrated_gradients_explanation
-    
-    print("Grad-CAM...")
-    grad_cam_explanation = grad_cam_method(model, image_device, 0)
-    methods_explanations['Grad-CAM'] = grad_cam_explanation
-    
-    print("Occlusion...")
-    occlusion_explanation = occlusion_method(model, image_device, 0)
-    methods_explanations['Occlusion'] = occlusion_explanation
-    
-    print("Saliency...")
-    saliency_explanation = saliency_method(model, image_device, 0)
-    methods_explanations['Saliency'] = saliency_explanation
-    
-    # Calcula as métricas para cada método
-    metrics_results = []
-    
-    print("\nCalculating metrics...")
-    print("=" * 80)
-    
-    for name, explanation in methods_explanations.items():
-        comp = completeness(explanation, image.numpy(), threshold=0.5)
-        attr_loc = attribution_localization(explanation, ground_truth.numpy(), threshold=0.5)
-        metrics_results.append((name, comp, attr_loc))
-        print(f'{name:25} | Completeness: {comp:.4f} | Attribution Localization: {attr_loc:.4f}')
-    
-    print("=" * 80)
-    
-    # Gera visualizações
-    print("\nGenerating visualizations...")
-    visualize_explanations(image, ground_truth, methods_explanations)
-    plot_metrics_comparison(metrics_results)
+    print("\nDone. Check 'images/' folder for visualizations.")
 
 if __name__ == '__main__':
     main()
