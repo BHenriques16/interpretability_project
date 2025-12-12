@@ -1,54 +1,54 @@
-# Avaliação de Interpretabilidade em Modelos de Classificação Facial
+# Interpretability Evaluation in Face Classification Models
 
-Este projeto implementa e compara diferentes métodos de **Interpretabilidade (XAI)** aplicados a um modelo de classificação de atributos faciais (ResNet-18) treinado no dataset **CelebA**.
+This project implements and compares different **Explainable AI (XAI)** methods applied to a facial attribute classification model (ResNet-18) trained on the **CelebA** dataset.
 
-O principal diferencial deste projeto é o pipeline de **validação quantitativa robusta**, que utiliza máscaras de segmentação anatómicas reais (do dataset **CelebAMask-HQ**) para calcular a precisão espacial das explicações (Attribution Localization / IoU), em vez de utilizar bounding boxes manuais ou aproximações.
+The key differentiator of this project is its **robust quantitative validation** pipeline. Instead of using manual bounding boxes or approximations, it employs real anatomical segmentation masks (from the **CelebAMask-HQ** dataset) to calculate the spatial precision of explanations (Attribution Localization / IoU).
 
-## Objetivos
+## Objectives
 
-1.  Treinar/Utilizar um modelo de Deep Learning para classificar 40 atributos faciais (ex: *Smiling*, *Young*, *Wearing Lipstick*).
-2.  Aplicar métodos de explicação pós-hoc para entender "onde" o modelo olha.
-3.  Validar quantitativamente se as explicações coincidem com a anatomia facial real usando **Ground Truth Dinâmico**.
+1.  Train/Use a Deep Learning model to classify 40 facial attributes (e.g., *Smiling*, *Young*, *Wearing Lipstick*).
+2.  Apply post-hoc explanation methods to understand "where" the model focuses its attention.
+3.  Quantitatively validate if the explanations align with real facial anatomy using a **Dynamic Ground Truth** system.
 
-## Metodologia
+## Methodology
 
-### 1. Modelo e Dados
-* **Modelo:** ResNet-18 (Pretrained on ImageNet -> Fine-tuned on CelebA).
-* **Treino:** Dataset CelebA (apenas labels binárias, sem informação de localização).
-* **Validação:** Subconjunto externo do **CelebAMask-HQ** (Imagens de alta resolução + Máscaras de Segmentação).
+### 1. Model and Data
+* **Model:** ResNet-18 (Pretrained on ImageNet -> Fine-tuned on CelebA).
+* **Training:** CelebA dataset (using only binary labels, without any localization information).
+* **Validation:** An external subset of **CelebAMask-HQ** (High-resolution images + Segmentation Masks).
 
-### 2. Métodos de Interpretabilidade Comparados
-* **LIME:** Perturbação baseada em superpixéis.
-* **Occlusion:** Perturbação baseada em janela deslizante.
-* **Grad-CAM:** Ativação baseada em gradientes na última camada convolucional.
-* **Integrated Gradients:** Método baseado em axiomas de gradiente.
-* **Saliency Maps:** Gradiente simples em relação à entrada.
+### 2. Compared XAI Methods
+* **LIME:** Perturbation based on superpixels.
+* **Occlusion:** Perturbation based on a sliding window.
+* **Grad-CAM:** Activation based on gradients in the final convolutional layer.
+* **Integrated Gradients:** Axiomatic attribution method based on path integrals.
+* **Saliency Maps:** Simple gradient regarding the input.
 
-### 3. Validação com Máscaras Dinâmicas (Inovação)
-Para calcular métricas justas, o sistema seleciona automaticamente a máscara de segmentação correta baseada na predição do modelo:
-* Se a predição for **"Wearing Lipstick"** → O sistema carrega e funde as máscaras `l_lip` e `u_lip`.
-* Se a predição for **"Black Hair"** → O sistema carrega a máscara `hair`.
-* Se a predição for **"Young"** → O sistema gera uma máscara facial completa (pele + olhos + nariz + boca).
+### 3. Validation with Dynamic Masks (Innovation)
+To calculate fair metrics, the system automatically selects the semantic segmentation mask corresponding to the model's specific prediction:
+* If prediction is **"Wearing Lipstick"** → System loads and merges `l_lip` and `u_lip` masks.
+* If prediction is **"Black Hair"** → System loads the `hair` mask.
+* If prediction is **"Young"** → System generates a full facial mask (skin + eyes + nose + mouth).
 
-Isto permite validar a **Localização Fracamente Supervisionada** (Weakly Supervised Localization).
+This approach successfully validates **Weakly Supervised Localization** capabilities.
 
-## Estrutura do Projeto
+## Project Structure
 
 ```text
 tp_interpretabilidade/
 │
-├── main.py               # Script principal (Carrega modelo, gera explicações e métricas)
-├── model.py              # Definição da arquitetura ResNet-18
-├── methods.py            # Implementação dos algoritmos XAI (LIME, Grad-CAM, etc.)
-├── metrics.py            # Funções de avaliação (IoU, Completeness)
-├── data_transform.py     # Pipelines de pré-processamento
+├── main.py               # Main script (Loads model, runs XAI, calcs metrics)
+├── model.py              # ResNet-18 architecture definition
+├── methods.py            # Implementation of XAI algorithms (LIME, Grad-CAM, etc.)
+├── metrics.py            # Evaluation functions (IoU, Completeness)
+├── data_transform.py     # Preprocessing pipelines
 │
 ├── models/
-│   └── best_model.pth    # Pesos do modelo treinado
+│   └── best_model.pth    # Trained model weights
 │
-├── validation_data/      # Dataset de Validação (CelebAMask-HQ)
-│   ├── CelebA-HQ-img/    # Imagens originais (.jpg)
-│   └── CelebAMask-HQ-mask-anno/  # Máscaras segmentadas por partes
+├── validation_data/      # Validation Dataset (CelebAMask-HQ)
+│   ├── CelebA-HQ-img/    # Original images (.jpg)
+│   └── CelebAMask-HQ-mask-anno/  # Segmented mask parts
 │
-├── images/               # Outputs visuais gerados
-└── requirements.txt      # Dependências do projeto
+├── images/               # Generated visual outputs
+└── requirements.txt      # Project dependencies
