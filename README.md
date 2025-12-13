@@ -1,6 +1,6 @@
 # Interpretability Evaluation in Face Classification Models
 
-This project implements and compares different **Interpretability AI ** methods applied to a facial attribute classification model (ResNet-18) trained on the **CelebA** dataset.
+This project implements and compares different **Interpretability ** methods applied to a facial attribute classification model (ResNet-18) trained on the **CelebA** dataset.
 
 The key differentiator of this project is its **robust quantitative validation** pipeline. Instead of using manual bounding boxes or approximations, it employs real anatomical segmentation masks (from the **CelebAMask-HQ** dataset) to calculate the spatial precision of explanations (Attribution Localization / IoU).
 
@@ -53,3 +53,4 @@ tp_interpretabilidade/
 ├── images/               # Generated visual outputs
 
 └── requirements.txt      # Project dependencies
+
