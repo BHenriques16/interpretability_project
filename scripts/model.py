@@ -4,7 +4,7 @@ import torchvision.models as models
 class PretrainedModel(nn.Module):
     def __init__(self, num_classes, pretrained=True):
         super(PretrainedModel, self).__init__()
-        # Carrega o modelo ResNet18 pré-treinado
+        # Loads Resnet-18
         self.model = models.resnet18(pretrained=pretrained)
         self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
 
