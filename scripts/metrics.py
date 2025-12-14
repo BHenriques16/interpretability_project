@@ -1,7 +1,6 @@
 import numpy as np
 
 def normalize_map(m):
-    """Normaliza um mapa para o intervalo [0, 1]."""
     if m.max() - m.min() == 0:
         return np.zeros_like(m)
     return (m - m.min()) / (m.max() - m.min())
